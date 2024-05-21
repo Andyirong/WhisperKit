@@ -3,12 +3,15 @@
 
 import SwiftUI
 import WhisperKit
+import OllamaKit
 #if canImport(UIKit)
 import UIKit
 #elseif canImport(AppKit)
 import AppKit
 #endif
 import AVFoundation
+import Combine
+
 
 struct ContentView: View {
     @State var whisperKit: WhisperKit? = nil
@@ -22,7 +25,6 @@ struct ContentView: View {
     @State var modelStorage: String = "huggingface/models/argmaxinc/whisperkit-coreml"
 
     // MARK: Model management
-
     @State private var modelState: ModelState = .unloaded
     @State private var localModels: [String] = []
     @State private var localModelPath: String = ""
@@ -32,7 +34,7 @@ struct ContentView: View {
 
     @AppStorage("selectedAudioInput") private var selectedAudioInput: String = "No Audio Input"
     @AppStorage("selectedModel") private var selectedModel: String = WhisperKit.recommendedModels().default
-    @AppStorage("selectedTab") private var selectedTab: String = "Transcribe"
+    @AppStorage("selectedTab") private var selectedTab: String = "Stream"
     @AppStorage("selectedTask") private var selectedTask: String = "transcribe"
     @AppStorage("selectedLanguage") private var selectedLanguage: String = "english"
     @AppStorage("repoName") private var repoName: String = "argmaxinc/whisperkit-coreml"
@@ -93,8 +95,8 @@ struct ContentView: View {
     @State private var transcribeFileTask: Task<Void, Never>? = nil
 
     private var menu = [
-        MenuItem(name: "Transcribe", image: "book.pages"),
         MenuItem(name: "Stream", image: "waveform.badge.mic"),
+        MenuItem(name: "Transcribe", image: "book.pages"),
     ]
 
     struct MenuItem: Identifiable, Hashable {
@@ -158,19 +160,25 @@ struct ContentView: View {
             .navigationTitle("WhisperAX")
             .navigationSplitViewColumnWidth(min: 300, ideal: 350)
         } detail: {
-            VStack {
-                #if os(iOS)
-                modelSelectorView
-                    .padding()
-                transcriptionView
-                #elseif os(macOS)
-                VStack(alignment: .leading) {
+            
+                VStack {
+                    #if os(iOS)
+                    modelSelectorView
+                        .padding()
                     transcriptionView
+                    #elseif os(macOS)
+                    HStack {
+                    VStack(alignment: .leading) {
+                        transcriptionView
+                    }.padding()
+                        Divider()
+                        CommandView()
+                            .foregroundColor(.gray)
+                            .frame(width:400) 
+                    }
+                    #endif
+                    controlsView
                 }
-                .padding()
-                #endif
-                controlsView
-            }
             .toolbar(content: {
                 ToolbarItem {
                     Button {
@@ -197,6 +205,7 @@ struct ContentView: View {
         }
     }
 
+    
     // MARK: - Transcription
 
     var transcriptionView: some View {
@@ -474,6 +483,27 @@ struct ContentView: View {
                                 .contentTransition(.symbolEffect(.replace))
                                 .buttonStyle(BorderlessButtonStyle())
                                 .disabled(modelState != .loaded)
+                                .frame(minWidth: 0, maxWidth: .infinity)
+                                .padding()
+                                
+                                
+                                Button(action: {
+                                    self.testOllamaKit()
+                                }) {
+                                    Text("Test Ollama")
+                                        .font(.headline)
+                                        .foregroundColor(.red)
+                                        .padding()
+                                        .cornerRadius(40)
+                                        .frame(minWidth: 70, minHeight: 70)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 40)
+                                                .stroke(color, lineWidth: 4)
+                                        )
+                                }
+                                .lineLimit(1)
+                                .contentTransition(.symbolEffect(.replace))
+                                .buttonStyle(BorderlessButtonStyle())
                                 .frame(minWidth: 0, maxWidth: .infinity)
                                 .padding()
 
@@ -998,6 +1028,31 @@ struct ContentView: View {
     func selectFile() {
         isFilePickerPresented = true
     }
+    
+    var cancellables = Set<AnyCancellable>()
+    
+    func testOllamaKit()  {
+        print("==== start ollamaKit")
+        let ollamaKit = OllamaKit()
+        let chatData = OKChatRequestData(model: "llama3", messages: [
+            OKChatRequestData.Message(role: OKChatRequestData.Message.Role.user, content: "Why is the sky blue?") 
+        ])
+        
+        Task {
+             do {
+                 var values:Array<String> = []
+                 for try await response in ollamaKit.chat(data: chatData) {
+                     
+                     if response.done == false , let content = response.message?.content {
+                         values.append(content)
+                     }
+                 }
+                 print("result: ", values.joined())
+             } catch {
+                 // Handle error
+             }
+        }
+    }
 
     func handleFilePicker(result: Result<[URL], Error>) {
         switch result {
@@ -1160,11 +1215,12 @@ struct ContentView: View {
 
         // Early stopping checks
         let decodingCallback: ((TranscriptionProgress) -> Bool?) = { progress in
+            print("===== progress", progress.text)
             DispatchQueue.main.async {
                 let fallbacks = Int(progress.timings.totalDecodingFallbacks)
                 if progress.text.count < currentText.count {
                     if fallbacks == self.currentFallbacks {
-                        self.unconfirmedText.append(currentText)
+                        //self.unconfirmedText.append(currentText)
                     } else {
                         print("Fallback occured: \(fallbacks)")
                     }
@@ -1188,12 +1244,12 @@ struct ContentView: View {
             }
             return nil
         }
-
+        
         return try await whisperKit.transcribe(
             audioArray: samples,
             decodeOptions: options,
             callback: decodingCallback
-        ).first
+        ) .first
     }
 
     // MARK: Streaming Logic
@@ -1300,7 +1356,12 @@ struct ContentView: View {
         } else {
             // Run realtime transcribe using timestamp tokens directly
             let transcription = try await transcribeAudioSamples(Array(currentBuffer))
-
+            
+            if let tr = transcription {
+                print("text - allwords >>>>> ", tr.text, tr.allWords, tr.language)
+            }
+            
+            
             // We need to run this next part on the main thread
             await MainActor.run {
                 currentText = ""

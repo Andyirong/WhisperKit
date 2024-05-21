@@ -1,6 +1,15 @@
 {
-  "originHash" : "cd17206b47bb810af9459722192530e3838d8e6629a970988e32a432aaa05f6e",
+  "originHash" : "447341a6844743afabdf532eb6d330c86dae65e77a9aa8d6bb8420073b4a4622",
   "pins" : [
+    {
+      "identity" : "alamofire",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Alamofire/Alamofire.git",
+      "state" : {
+        "revision" : "f455c2975872ccd2d9c81594c658af65716e9b9a",
+        "version" : "5.9.1"
+      }
+    },
     {
       "identity" : "networkimage",
       "kind" : "remoteSourceControl",
@@ -8,6 +17,15 @@
       "state" : {
         "revision" : "7aff8d1b31148d32c5933d75557d42f6323ee3d1",
         "version" : "6.0.0"
+      }
+    },
+    {
+      "identity" : "ollamakit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/kevinhermawan/OllamaKit.git",
+      "state" : {
+        "revision" : "0b0ab9995e85ca7163ca4a4bb1aaa5e6ac2fd619",
+        "version" : "4.1.0"
       }
     },
     {

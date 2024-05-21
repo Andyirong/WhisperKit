@@ -27,8 +27,8 @@ open class WhisperKit {
 
     /// Shapes
     public static var sampleRate: Int = 16000
-    public static var hopLength: Int = 160
-    public static var chunkLength: Int = 30 // seconds
+    public static var hopLength: Int = 80
+    public static var chunkLength: Int = 2 // seconds
     public static var windowSamples: Int = 480_000 // sampleRate * chunkLength
     public static var secondsPerTimeToken = Float(0.02)
 
