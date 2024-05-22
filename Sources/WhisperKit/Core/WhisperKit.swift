@@ -450,7 +450,7 @@ open class WhisperKit {
                                 audioArray: audioArray,
                                 decodeOptions: decodeOptions,
                                 callback: callback
-                            )
+                            ) 
                             return [(index: index, result: .success(transcribeResult))]
                         } catch {
                             return [(index: index, result: .failure(error))]

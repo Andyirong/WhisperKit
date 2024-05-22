@@ -15,15 +15,13 @@ import Combine
 
 struct ContentView: View {
     @State var whisperKit: WhisperKit? = nil
-    #if os(macOS)
     @State var audioDevices: [AudioDevice]? = nil
-    #endif
     @State var isRecording: Bool = false
     @State var isTranscribing: Bool = false
     @State var currentText: String = ""
     // TODO: Make this configurable in the UI
     @State var modelStorage: String = "huggingface/models/argmaxinc/whisperkit-coreml"
-
+    
     // MARK: Model management
     @State private var modelState: ModelState = .unloaded
     @State private var localModels: [String] = []
@@ -31,7 +29,7 @@ struct ContentView: View {
     @State private var availableModels: [String] = []
     @State private var availableLanguages: [String] = []
     @State private var disabledModels: [String] = WhisperKit.recommendedModels().disabled
-
+    
     @AppStorage("selectedAudioInput") private var selectedAudioInput: String = "No Audio Input"
     @AppStorage("selectedModel") private var selectedModel: String = WhisperKit.recommendedModels().default
     @AppStorage("selectedTab") private var selectedTab: String = "Stream"
@@ -42,18 +40,18 @@ struct ContentView: View {
     @AppStorage("enablePromptPrefill") private var enablePromptPrefill: Bool = true
     @AppStorage("enableCachePrefill") private var enableCachePrefill: Bool = true
     @AppStorage("enableSpecialCharacters") private var enableSpecialCharacters: Bool = false
-    @AppStorage("enableEagerDecoding") private var enableEagerDecoding: Bool = false
+    @AppStorage("enableEagerDecoding") private var enableEagerDecoding: Bool = true
     @AppStorage("enableDecoderPreview") private var enableDecoderPreview: Bool = true
     @AppStorage("temperatureStart") private var temperatureStart: Double = 0
     @AppStorage("fallbackCount") private var fallbackCount: Double = 5
     @AppStorage("compressionCheckWindow") private var compressionCheckWindow: Double = 20
     @AppStorage("sampleLength") private var sampleLength: Double = 224
-    @AppStorage("silenceThreshold") private var silenceThreshold: Double = 0.3
+    @AppStorage("silenceThreshold") private var silenceThreshold: Double = 0.6
     @AppStorage("useVAD") private var useVAD: Bool = true
-    @AppStorage("tokenConfirmationsNeeded") private var tokenConfirmationsNeeded: Double = 2
-
+    @AppStorage("tokenConfirmationsNeeded") private var tokenConfirmationsNeeded: Double = 5
+    
     // MARK: Standard properties
-
+    
     @State private var loadingProgressValue: Float = 0.0
     @State private var specializationProgressRatio: Float = 0.7
     @State private var isFilePickerPresented = false
@@ -74,9 +72,9 @@ struct ContentView: View {
     @State private var confirmedSegments: [TranscriptionSegment] = []
     @State private var unconfirmedSegments: [TranscriptionSegment] = []
     @State private var unconfirmedText: [String] = []
-
+    
     // MARK: Eager mode properties
-
+    
     @State private var eagerResults: [TranscriptionResult?] = []
     @State private var prevResult: TranscriptionResult?
     @State private var lastAgreedSeconds: Float = 0.0
@@ -86,27 +84,29 @@ struct ContentView: View {
     @State private var confirmedText: String = ""
     @State private var hypothesisWords: [WordTiming] = []
     @State private var hypothesisText: String = ""
-
+    
     // MARK: UI properties
-
+    
     @State private var showAdvancedOptions: Bool = false
     @State private var transcriptionTask: Task<Void, Never>? = nil
     @State private var selectedCategoryId: MenuItem.ID?
     @State private var transcribeFileTask: Task<Void, Never>? = nil
-
+    
+    private var pxAiServer = PundixAiServer()
+    
     private var menu = [
-        MenuItem(name: "Stream", image: "waveform.badge.mic"),
-        MenuItem(name: "Transcribe", image: "book.pages"),
+        MenuItem(name: "Stream", image: "waveform.badge.mic")
+        //MenuItem(name: "Transcribe", image: "book.pages"),
     ]
-
+    
     struct MenuItem: Identifiable, Hashable {
         var id = UUID()
         var name: String
         var image: String
     }
-
+    
     // MARK: Views
-
+    
     func resetState() {
         transcribeFileTask?.cancel()
         isRecording = false
@@ -130,7 +130,7 @@ struct ContentView: View {
         bufferSeconds = 0
         confirmedSegments = []
         unconfirmedSegments = []
-
+        
         eagerResults = []
         prevResult = nil
         lastAgreedSeconds = 0.0
@@ -141,7 +141,7 @@ struct ContentView: View {
         hypothesisWords = []
         hypothesisText = ""
     }
-
+    
     var body: some View {
         NavigationSplitView(columnVisibility: Binding.constant(.all)) {
             modelSelectorView
@@ -161,34 +161,24 @@ struct ContentView: View {
             .navigationSplitViewColumnWidth(min: 300, ideal: 350)
         } detail: {
             
-                VStack {
-                    #if os(iOS)
-                    modelSelectorView
-                        .padding()
-                    transcriptionView
-                    #elseif os(macOS)
-                    HStack {
+            VStack {
+                HStack {
                     VStack(alignment: .leading) {
                         transcriptionView
                     }.padding()
-                        Divider()
-                        CommandView()
-                            .foregroundColor(.gray)
-                            .frame(width:400) 
-                    }
-                    #endif
-                    controlsView
+                    Divider()
+                    CommandView()
+                        .foregroundColor(.gray)
+                        .frame(width:400)
                 }
+                controlsView
+            }
             .toolbar(content: {
                 ToolbarItem {
                     Button {
                         let fullTranscript = formatSegments(confirmedSegments + unconfirmedSegments, withTimestamps: enableTimestamps).joined(separator: "\n")
-                        #if os(iOS)
-                        UIPasteboard.general.string = fullTranscript
-                        #elseif os(macOS)
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(fullTranscript, forType: .string)
-                        #endif
                     } label: {
                         Label("Copy Text", systemImage: "doc.on.doc")
                     }
@@ -198,16 +188,14 @@ struct ContentView: View {
             })
         }
         .onAppear {
-            #if os(macOS)
             selectedCategoryId = menu.first(where: { $0.name == selectedTab })?.id
-            #endif
             fetchModels()
         }
     }
-
+    
     
     // MARK: - Transcription
-
+    
     var transcriptionView: some View {
         VStack {
             ScrollView(.horizontal) {
@@ -233,12 +221,14 @@ struct ContentView: View {
                         Text("\(timestampText) \(Text(confirmedText).fontWeight(.bold))\(Text(hypothesisText).fontWeight(.bold).foregroundColor(.gray))")
                             .font(.headline)
                             .multilineTextAlignment(.leading)
+                            .background(Color.red)
                             .frame(maxWidth: .infinity, alignment: .leading)
-
+                        
                         if enableDecoderPreview {
                             Text("\(currentText)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
+                                .background(Color.blue)
                                 .multilineTextAlignment(.leading)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.top)
@@ -250,6 +240,7 @@ struct ContentView: View {
                                 .font(.headline)
                                 .fontWeight(.bold)
                                 .tint(.green)
+                                .background(Color.green)
                                 .multilineTextAlignment(.leading)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -259,6 +250,7 @@ struct ContentView: View {
                                 .font(.headline)
                                 .fontWeight(.bold)
                                 .foregroundColor(.gray)
+                                .background(Color.yellow)
                                 .multilineTextAlignment(.leading)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -267,11 +259,13 @@ struct ContentView: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.leading)
+                                .background(Color.red)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             Text("\(currentText)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.leading)
+                                .background(Color.blue)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
@@ -293,9 +287,9 @@ struct ContentView: View {
             }
         }
     }
-
+    
     // MARK: - Models
-
+    
     var modelSelectorView: some View {
         Group {
             VStack {
@@ -304,9 +298,9 @@ struct ContentView: View {
                         .foregroundStyle(modelState == .loaded ? .green : (modelState == .unloaded ? .red : .yellow))
                         .symbolEffect(.variableColor, isActive: modelState != .loaded && modelState != .unloaded)
                     Text(modelState.description)
-
+                    
                     Spacer()
-
+                    
                     if availableModels.count > 0 {
                         Picker("", selection: $selectedModel) {
                             ForEach(availableModels, id: \.self) { model in
@@ -325,7 +319,7 @@ struct ContentView: View {
                             .progressViewStyle(CircularProgressViewStyle())
                             .scaleEffect(0.5)
                     }
-
+                    
                     Button(action: {
                         deleteModel()
                     }, label: {
@@ -335,8 +329,7 @@ struct ContentView: View {
                     .buttonStyle(BorderlessButtonStyle())
                     .disabled(localModels.count == 0)
                     .disabled(!localModels.contains(selectedModel))
-
-                    #if os(macOS)
+                     
                     Button(action: {
                         let folderURL = whisperKit?.modelFolder ?? (localModels.contains(selectedModel) ? URL(fileURLWithPath: localModelPath) : nil)
                         if let folder = folderURL {
@@ -346,21 +339,17 @@ struct ContentView: View {
                         Image(systemName: "folder")
                     })
                     .buttonStyle(BorderlessButtonStyle())
-                    #endif
+                    
                     Button(action: {
                         if let url = URL(string: "https://huggingface.co/\(repoName)") {
-                            #if os(macOS)
                             NSWorkspace.shared.open(url)
-                            #else
-                            UIApplication.shared.open(url)
-                            #endif
                         }
                     }, label: {
                         Image(systemName: "link.circle")
                     })
                     .buttonStyle(BorderlessButtonStyle())
                 }
-
+                
                 if modelState == .unloaded {
                     Divider()
                     Button {
@@ -379,7 +368,7 @@ struct ContentView: View {
                             ProgressView(value: loadingProgressValue, total: 1.0)
                                 .progressViewStyle(LinearProgressViewStyle())
                                 .frame(maxWidth: .infinity)
-
+                            
                             Text(String(format: "%.1f%%", loadingProgressValue * 100))
                                 .font(.caption)
                                 .foregroundColor(.gray)
@@ -394,12 +383,10 @@ struct ContentView: View {
             }
         }
     }
-
+    
     // MARK: - Controls
-
     var audioDevicesView: some View {
         Group {
-            #if os(macOS)
             HStack {
                 if let audioDevices = audioDevices, audioDevices.count > 0 {
                     Picker("", selection: $selectedAudioInput) {
@@ -421,188 +408,124 @@ struct ContentView: View {
                     selectedAudioInput = device.name
                 }
             }
-            #endif
         }
     }
-
+    
     var controlsView: some View {
         VStack {
             basicSettingsView
-
+            
             if let selectedCategoryId, let item = menu.first(where: { $0.id == selectedCategoryId }) {
                 switch item.name {
-                    case "Transcribe":
-                        VStack {
-                            HStack {
-                                Button {
-                                    resetState()
-                                } label: {
-                                    Label("Reset", systemImage: "arrow.clockwise")
-                                }
-                                .buttonStyle(.borderless)
-
-                                Spacer()
-
-                                audioDevicesView
-
-                                Spacer()
-
-                                Button {
-                                    showAdvancedOptions.toggle()
-                                } label: {
-                                    Label("Settings", systemImage: "slider.horizontal.3")
-                                }
-                                .buttonStyle(.borderless)
+                case "Transcribe":
+                    VStack {
+                        HStack {
+                            Button {
+                                resetState()
+                            } label: {
+                                Label("Reset", systemImage: "arrow.clockwise")
                             }
-
-                            HStack {
-                                let color: Color = modelState != .loaded ? .gray : .red
-                                Button(action: {
-                                    withAnimation {
-                                        selectFile()
-                                    }
-                                }) {
-                                    Text("FROM FILE")
-                                        .font(.headline)
-                                        .foregroundColor(color)
-                                        .padding()
-                                        .cornerRadius(40)
-                                        .frame(minWidth: 70, minHeight: 70)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 40)
-                                                .stroke(color, lineWidth: 4)
-                                        )
-                                }
-                                .fileImporter(
-                                    isPresented: $isFilePickerPresented,
-                                    allowedContentTypes: [.audio],
-                                    allowsMultipleSelection: false,
-                                    onCompletion: handleFilePicker
-                                )
-                                .lineLimit(1)
-                                .contentTransition(.symbolEffect(.replace))
-                                .buttonStyle(BorderlessButtonStyle())
-                                .disabled(modelState != .loaded)
-                                .frame(minWidth: 0, maxWidth: .infinity)
-                                .padding()
-                                
-                                
-                                Button(action: {
-                                    self.testOllamaKit()
-                                }) {
-                                    Text("Test Ollama")
-                                        .font(.headline)
-                                        .foregroundColor(.red)
-                                        .padding()
-                                        .cornerRadius(40)
-                                        .frame(minWidth: 70, minHeight: 70)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 40)
-                                                .stroke(color, lineWidth: 4)
-                                        )
-                                }
-                                .lineLimit(1)
-                                .contentTransition(.symbolEffect(.replace))
-                                .buttonStyle(BorderlessButtonStyle())
-                                .frame(minWidth: 0, maxWidth: .infinity)
-                                .padding()
-
-                                ZStack {
-                                    Button(action: {
-                                        withAnimation {
-                                            toggleRecording(shouldLoop: false)
-                                        }
-                                    }) {
-                                        if !isRecording {
-                                            Text("RECORD")
-                                                .font(.headline)
-                                                .foregroundColor(color)
-                                                .padding()
-                                                .cornerRadius(40)
-                                                .frame(minWidth: 70, minHeight: 70)
-                                                .overlay(
-                                                    RoundedRectangle(cornerRadius: 40)
-                                                        .stroke(color, lineWidth: 4)
-                                                )
-                                        } else {
-                                            Image(systemName: "stop.circle.fill")
-                                                .resizable()
-                                                .scaledToFit()
-                                                .frame(width: 70, height: 70)
-                                                .padding()
-                                                .foregroundColor(modelState != .loaded ? .gray : .red)
-                                        }
-                                    }
-                                    .lineLimit(1)
-                                    .contentTransition(.symbolEffect(.replace))
-                                    .buttonStyle(BorderlessButtonStyle())
-                                    .disabled(modelState != .loaded)
-                                    .frame(minWidth: 0, maxWidth: .infinity)
-                                    .padding()
-
-                                    if isRecording {
-                                        Text("\(String(format: "%.1f", bufferSeconds)) s")
-                                            .font(.caption)
-                                            .foregroundColor(.gray)
-                                            .offset(x: 80, y: 0)
-                                    }
-                                }
+                            .buttonStyle(.borderless)
+                            
+                            Spacer()
+                            
+                            audioDevicesView
+                            
+                            Spacer()
+                            
+                            Button {
+                                showAdvancedOptions.toggle()
+                            } label: {
+                                Label("Settings", systemImage: "slider.horizontal.3")
                             }
+                            .buttonStyle(.borderless)
                         }
-                    case "Stream":
-                        VStack {
-                            HStack {
-                                Button {
-                                    resetState()
-                                } label: {
-                                    Label("Reset", systemImage: "arrow.clockwise")
+                        
+                        HStack {
+                            let color: Color = modelState != .loaded ? .gray : .red
+                            Button(action: {
+                                withAnimation {
+                                    selectFile()
                                 }
-                                .frame(minWidth: 0, maxWidth: .infinity)
-                                .buttonStyle(.borderless)
-
-                                Spacer()
-
-                                audioDevicesView
-
-                                Spacer()
-
-                                VStack {
-                                    Button {
-                                        showAdvancedOptions.toggle()
-                                    } label: {
-                                        Label("Settings", systemImage: "slider.horizontal.3")
-                                    }
-                                    .frame(minWidth: 0, maxWidth: .infinity)
-                                    .buttonStyle(.borderless)
-                                }
+                            }) {
+                                Text("FROM FILE")
+                                    .font(.headline)
+                                    .foregroundColor(color)
+                                    .padding()
+                                    .cornerRadius(40)
+                                    .frame(minWidth: 70, minHeight: 70)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 40)
+                                            .stroke(color, lineWidth: 4)
+                                    )
                             }
-
+                            .fileImporter(
+                                isPresented: $isFilePickerPresented,
+                                allowedContentTypes: [.audio],
+                                allowsMultipleSelection: false,
+                                onCompletion: handleFilePicker
+                            )
+                            .lineLimit(1)
+                            .contentTransition(.symbolEffect(.replace))
+                            .buttonStyle(BorderlessButtonStyle())
+                            .disabled(modelState != .loaded)
+                            .frame(minWidth: 0, maxWidth: .infinity)
+                            .padding()
+                            
+                            
+                            Button(action: {
+                                self.testOllamaKit()
+                            }) {
+                                Text("Test Ollama")
+                                    .font(.headline)
+                                    .foregroundColor(.red)
+                                    .padding()
+                                    .cornerRadius(40)
+                                    .frame(minWidth: 70, minHeight: 70)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 40)
+                                            .stroke(color, lineWidth: 4)
+                                    )
+                            }
+                            .lineLimit(1)
+                            .contentTransition(.symbolEffect(.replace))
+                            .buttonStyle(BorderlessButtonStyle())
+                            .frame(minWidth: 0, maxWidth: .infinity)
+                            .padding()
+                            
                             ZStack {
-                                Button {
+                                Button(action: {
                                     withAnimation {
-                                        toggleRecording(shouldLoop: true)
+                                        toggleRecording(shouldLoop: false)
                                     }
-                                } label: {
-                                    Image(systemName: !isRecording ? "record.circle" : "stop.circle.fill")
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(width: 70, height: 70)
-                                        .padding()
-                                        .foregroundColor(modelState != .loaded ? .gray : .red)
+                                }) {
+                                    if !isRecording {
+                                        Text("RECORD")
+                                            .font(.headline)
+                                            .foregroundColor(color)
+                                            .padding()
+                                            .cornerRadius(40)
+                                            .frame(minWidth: 70, minHeight: 70)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 40)
+                                                    .stroke(color, lineWidth: 4)
+                                            )
+                                    } else {
+                                        Image(systemName: "stop.circle.fill")
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(width: 70, height: 70)
+                                            .padding()
+                                            .foregroundColor(modelState != .loaded ? .gray : .red)
+                                    }
                                 }
+                                .lineLimit(1)
                                 .contentTransition(.symbolEffect(.replace))
                                 .buttonStyle(BorderlessButtonStyle())
                                 .disabled(modelState != .loaded)
                                 .frame(minWidth: 0, maxWidth: .infinity)
-
-                                VStack {
-                                    Text("Encoder runs: \(currentEncodingLoops)")
-                                        .font(.caption)
-                                    Text("Decoder runs: \(currentDecodingLoops)")
-                                        .font(.caption)
-                                }
-                                .offset(x: -120, y: 0)
-
+                                .padding()
+                                
                                 if isRecording {
                                     Text("\(String(format: "%.1f", bufferSeconds)) s")
                                         .font(.caption)
@@ -611,8 +534,71 @@ struct ContentView: View {
                                 }
                             }
                         }
-                    default:
-                        EmptyView()
+                    }
+                case "Stream":
+                    VStack {
+                        HStack {
+                            Button {
+                                resetState()
+                            } label: {
+                                Label("Reset", systemImage: "arrow.clockwise")
+                            }
+                            .frame(minWidth: 0, maxWidth: .infinity)
+                            .buttonStyle(.borderless)
+                            
+                            Spacer()
+                            
+                            audioDevicesView
+                            
+                            Spacer()
+                            
+                            VStack {
+                                Button {
+                                    showAdvancedOptions.toggle()
+                                } label: {
+                                    Label("Settings", systemImage: "slider.horizontal.3")
+                                }
+                                .frame(minWidth: 0, maxWidth: .infinity)
+                                .buttonStyle(.borderless)
+                            }
+                        }
+                        
+                        ZStack {
+                            Button {
+                                withAnimation {
+                                    toggleRecording(shouldLoop: true)
+                                }
+                            } label: {
+                                Image(systemName: !isRecording ? "record.circle" : "stop.circle.fill")
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 70, height: 70)
+                                    .padding()
+                                    .foregroundColor(modelState != .loaded ? .gray : .red)
+                            }
+                            .contentTransition(.symbolEffect(.replace))
+                            .buttonStyle(BorderlessButtonStyle())
+                            .disabled(modelState != .loaded)
+                            .frame(minWidth: 0, maxWidth: .infinity)
+                            
+                            VStack {
+                                Text("Encoder runs: \(currentEncodingLoops)")
+                                    .font(.caption)
+                                Text("Decoder runs: \(currentDecodingLoops)")
+                                    .font(.caption)
+                            }
+                            .offset(x: -120, y: 0)
+                            
+                            if isRecording {
+                                Text("\(String(format: "%.1f", bufferSeconds)) s")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                    .offset(x: 80, y: 0)
+                            }
+                        }
+                    }
+                default:
+                    EmptyView()
                 }
             }
         }
@@ -625,7 +611,7 @@ struct ContentView: View {
                 .presentationContentInteraction(.scrolls)
         })
     }
-
+    
     var basicSettingsView: some View {
         VStack {
             HStack {
@@ -638,7 +624,7 @@ struct ContentView: View {
                 .disabled(!(whisperKit?.modelVariant.isMultilingual ?? false))
             }
             .padding(.horizontal)
-
+            
             LabeledContent {
                 Picker("", selection: $selectedLanguage) {
                     ForEach(availableLanguages, id: \.self) { language in
@@ -651,7 +637,7 @@ struct ContentView: View {
             }
             .padding(.horizontal)
             .padding(.top)
-
+            
             HStack {
                 Text(effectiveRealTimeFactor.formatted(.number.precision(.fractionLength(3))) + " RTF")
                     .font(.system(.body))
@@ -669,14 +655,8 @@ struct ContentView: View {
             .frame(maxWidth: .infinity)
         }
     }
-
+    
     var advancedSettingsView: some View {
-        #if os(iOS)
-        NavigationView {
-            settingsForm
-                .navigationBarTitleDisplayMode(.inline)
-        }
-        #else
         VStack {
             Text("Decoding Options")
                 .font(.title2)
@@ -684,9 +664,8 @@ struct ContentView: View {
             settingsForm
                 .frame(minWidth: 500, minHeight: 500)
         }
-        #endif
     }
-
+    
     var settingsForm: some View {
         List {
             HStack {
@@ -696,7 +675,7 @@ struct ContentView: View {
                 Toggle("", isOn: $enableTimestamps)
             }
             .padding(.horizontal)
-
+            
             HStack {
                 Text("Special Characters")
                 InfoButton("Toggling this will include/exclude special characters in the transcription text.")
@@ -704,7 +683,7 @@ struct ContentView: View {
                 Toggle("", isOn: $enableSpecialCharacters)
             }
             .padding(.horizontal)
-
+            
             HStack {
                 Text("Show Decoder Preview")
                 InfoButton("Toggling this will show a small preview of the decoder output in the UI under the transcribe. This can be useful for debugging.")
@@ -712,7 +691,7 @@ struct ContentView: View {
                 Toggle("", isOn: $enableDecoderPreview)
             }
             .padding(.horizontal)
-
+            
             HStack {
                 Text("Prompt Prefill")
                 InfoButton("When Prompt Prefill is on, it will force the task, language, and timestamp tokens in the decoding loop. \nToggle it off if you'd like the model to generate those tokens itself instead.")
@@ -720,7 +699,7 @@ struct ContentView: View {
                 Toggle("", isOn: $enablePromptPrefill)
             }
             .padding(.horizontal)
-
+            
             HStack {
                 Text("Cache Prefill")
                 InfoButton("When Cache Prefill is on, the decoder will try to use a lookup table of pre-computed KV caches instead of computing them during the decoding loop. \nThis allows the model to skip the compute required to force the initial prefill tokens, and can speed up inference")
@@ -728,7 +707,7 @@ struct ContentView: View {
                 Toggle("", isOn: $enableCachePrefill)
             }
             .padding(.horizontal)
-
+            
             VStack {
                 Text("Starting Temperature:")
                 HStack {
@@ -738,7 +717,7 @@ struct ContentView: View {
                 }
             }
             .padding(.horizontal)
-
+            
             VStack {
                 Text("Max Fallback Count:")
                 HStack {
@@ -749,7 +728,7 @@ struct ContentView: View {
                 }
             }
             .padding(.horizontal)
-
+            
             VStack {
                 Text("Compression Check Tokens")
                 HStack {
@@ -760,7 +739,7 @@ struct ContentView: View {
                 }
             }
             .padding(.horizontal)
-
+            
             VStack {
                 Text("Max Tokens Per Loop")
                 HStack {
@@ -771,7 +750,7 @@ struct ContentView: View {
                 }
             }
             .padding(.horizontal)
-
+            
             VStack {
                 Text("Silence Threshold")
                 HStack {
@@ -782,7 +761,7 @@ struct ContentView: View {
                 }
             }
             .padding(.horizontal)
-
+            
             Section(header: Text("Experimental")) {
                 HStack {
                     Text("Eager Streaming Mode")
@@ -792,7 +771,7 @@ struct ContentView: View {
                 }
                 .padding(.horizontal)
                 .padding(.top)
-
+                
                 VStack {
                     Text("Token Confirmations")
                     HStack {
@@ -817,15 +796,15 @@ struct ContentView: View {
             }
         })
     }
-
+    
     struct InfoButton: View {
         var infoText: String
         @State private var showInfo = false
-
+        
         init(_ infoText: String) {
             self.infoText = infoText
         }
-
+        
         var body: some View {
             Button(action: {
                 self.showInfo = true
@@ -840,16 +819,16 @@ struct ContentView: View {
             .buttonStyle(BorderlessButtonStyle())
         }
     }
-
+    
     // MARK: - Logic
-
+    
     func fetchModels() {
         availableModels = [selectedModel]
-
+        
         // First check what's already downloaded
         if let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
             let modelPath = documents.appendingPathComponent(modelStorage).path
-
+            
             // Check if the directory exists
             if FileManager.default.fileExists(atPath: modelPath) {
                 localModelPath = modelPath
@@ -863,7 +842,7 @@ struct ContentView: View {
                 }
             }
         }
-
+        
         localModels = WhisperKit.formatModelFiles(localModels)
         for model in localModels {
             if !availableModels.contains(model),
@@ -872,10 +851,10 @@ struct ContentView: View {
                 availableModels.append(model)
             }
         }
-
+        
         print("Found locally: \(localModels)")
         print("Previously selected model: \(selectedModel)")
-
+        
         Task {
             let remoteModels = try await WhisperKit.fetchAvailableModels(from: repoName)
             for model in remoteModels {
@@ -887,10 +866,10 @@ struct ContentView: View {
             }
         }
     }
-
+    
     func loadModel(_ model: String, redownload: Bool = false) {
         print("Selected Model: \(UserDefaults.standard.string(forKey: "selectedModel") ?? "nil")")
-
+        
         whisperKit = nil
         Task {
             whisperKit = try await WhisperKit(
@@ -903,9 +882,9 @@ struct ContentView: View {
             guard let whisperKit = whisperKit else {
                 return
             }
-
+            
             var folder: URL?
-
+            
             // Check if the model is available locally
             if localModels.contains(model) && !redownload {
                 // Get local model folder URL from localModels
@@ -920,25 +899,25 @@ struct ContentView: View {
                     }
                 })
             }
-
+            
             await MainActor.run {
                 loadingProgressValue = specializationProgressRatio
                 modelState = .downloaded
             }
-
+            
             if let modelFolder = folder {
                 whisperKit.modelFolder = modelFolder
-
+                
                 await MainActor.run {
                     // Set the loading progress to 90% of the way after prewarm
                     loadingProgressValue = specializationProgressRatio
                     modelState = .prewarming
                 }
-
+                
                 let progressBarTask = Task {
                     await updateProgressBar(targetProgress: 0.9, maxTime: 240)
                 }
-
+                
                 // Prewarm models
                 do {
                     try await whisperKit.prewarmModels()
@@ -955,20 +934,20 @@ struct ContentView: View {
                         return
                     }
                 }
-
+                
                 await MainActor.run {
                     // Set the loading progress to 90% of the way after prewarm
                     loadingProgressValue = specializationProgressRatio + 0.9 * (1 - specializationProgressRatio)
                     modelState = .loading
                 }
-
+                
                 try await whisperKit.loadModels()
-
+                
                 await MainActor.run {
                     if !localModels.contains(model) {
                         localModels.append(model)
                     }
-
+                    
                     availableLanguages = Constants.languages.map { $0.key }.sorted()
                     loadingProgressValue = 1.0
                     modelState = whisperKit.modelState
@@ -976,47 +955,45 @@ struct ContentView: View {
             }
         }
     }
-
+    
     func deleteModel() {
         if localModels.contains(selectedModel) {
             let modelFolder = URL(fileURLWithPath: localModelPath).appendingPathComponent(selectedModel)
-
+            
             do {
                 try FileManager.default.removeItem(at: modelFolder)
-
+                
                 if let index = localModels.firstIndex(of: selectedModel) {
                     localModels.remove(at: index)
                 }
-
+                
                 modelState = .unloaded
             } catch {
                 print("Error deleting model: \(error)")
             }
         }
     }
-
+    
     func updateProgressBar(targetProgress: Float, maxTime: TimeInterval) async {
         let initialProgress = loadingProgressValue
         let decayConstant = -log(1 - targetProgress) / Float(maxTime)
-
+        
         let startTime = Date()
-
+        
         while true {
             let elapsedTime = Date().timeIntervalSince(startTime)
-
-            // Break down the calculation
             let decayFactor = exp(-decayConstant * Float(elapsedTime))
             let progressIncrement = (1 - initialProgress) * (1 - decayFactor)
             let currentProgress = initialProgress + progressIncrement
-
+            
             await MainActor.run {
                 loadingProgressValue = currentProgress
             }
-
+            
             if currentProgress >= targetProgress {
                 break
             }
-
+            
             do {
                 try await Task.sleep(nanoseconds: 100_000_000)
             } catch {
@@ -1024,7 +1001,7 @@ struct ContentView: View {
             }
         }
     }
-
+    
     func selectFile() {
         isFilePickerPresented = true
     }
@@ -1032,59 +1009,58 @@ struct ContentView: View {
     var cancellables = Set<AnyCancellable>()
     
     func testOllamaKit()  {
-        print("==== start ollamaKit")
         let ollamaKit = OllamaKit()
         let chatData = OKChatRequestData(model: "llama3", messages: [
-            OKChatRequestData.Message(role: OKChatRequestData.Message.Role.user, content: "Why is the sky blue?") 
+            OKChatRequestData.Message(role: OKChatRequestData.Message.Role.user, content: "Why is the sky blue?")
         ])
         
         Task {
-             do {
-                 var values:Array<String> = []
-                 for try await response in ollamaKit.chat(data: chatData) {
-                     
-                     if response.done == false , let content = response.message?.content {
-                         values.append(content)
-                     }
-                 }
-                 print("result: ", values.joined())
-             } catch {
-                 // Handle error
-             }
-        }
-    }
-
-    func handleFilePicker(result: Result<[URL], Error>) {
-        switch result {
-            case let .success(urls):
-                guard let selectedFileURL = urls.first else { return }
-                if selectedFileURL.startAccessingSecurityScopedResource() {
-                    do {
-                        // Access the document data from the file URL
-                        let audioFileData = try Data(contentsOf: selectedFileURL)
-
-                        // Create a unique file name to avoid overwriting any existing files
-                        let uniqueFileName = UUID().uuidString + "." + selectedFileURL.pathExtension
-
-                        // Construct the temporary file URL in the app's temp directory
-                        let tempDirectoryURL = FileManager.default.temporaryDirectory
-                        let localFileURL = tempDirectoryURL.appendingPathComponent(uniqueFileName)
-
-                        // Write the data to the temp directory
-                        try audioFileData.write(to: localFileURL)
-
-                        print("File saved to temporary directory: \(localFileURL)")
-
-                        transcribeFile(path: selectedFileURL.path)
-                    } catch {
-                        print("File selection error: \(error.localizedDescription)")
+            do {
+                var values:Array<String> = []
+                for try await response in ollamaKit.chat(data: chatData) {
+                    
+                    if response.done == false , let content = response.message?.content {
+                        values.append(content)
                     }
                 }
-            case let .failure(error):
-                print("File selection error: \(error.localizedDescription)")
+                print("result: ", values.joined())
+            } catch {
+                // Handle error
+            }
         }
     }
-
+    
+    func handleFilePicker(result: Result<[URL], Error>) {
+        switch result {
+        case let .success(urls):
+            guard let selectedFileURL = urls.first else { return }
+            if selectedFileURL.startAccessingSecurityScopedResource() {
+                do {
+                    // Access the document data from the file URL
+                    let audioFileData = try Data(contentsOf: selectedFileURL)
+                    
+                    // Create a unique file name to avoid overwriting any existing files
+                    let uniqueFileName = UUID().uuidString + "." + selectedFileURL.pathExtension
+                    
+                    // Construct the temporary file URL in the app's temp directory
+                    let tempDirectoryURL = FileManager.default.temporaryDirectory
+                    let localFileURL = tempDirectoryURL.appendingPathComponent(uniqueFileName)
+                    
+                    // Write the data to the temp directory
+                    try audioFileData.write(to: localFileURL)
+                    
+                    print("File saved to temporary directory: \(localFileURL)")
+                    
+                    transcribeFile(path: selectedFileURL.path)
+                } catch {
+                    print("File selection error: \(error.localizedDescription)")
+                }
+            }
+        case let .failure(error):
+            print("File selection error: \(error.localizedDescription)")
+        }
+    }
+    
     func transcribeFile(path: String) {
         resetState()
         whisperKit?.audioProcessor = AudioProcessor()
@@ -1096,10 +1072,10 @@ struct ContentView: View {
             }
         }
     }
-
+    
     func toggleRecording(shouldLoop: Bool) {
         isRecording.toggle()
-
+        
         if isRecording {
             resetState()
             startRecording(shouldLoop)
@@ -1107,7 +1083,7 @@ struct ContentView: View {
             stopRecording(shouldLoop)
         }
     }
-
+    
     func startRecording(_ loop: Bool) {
         if let audioProcessor = whisperKit?.audioProcessor {
             Task(priority: .userInitiated) {
@@ -1115,29 +1091,26 @@ struct ContentView: View {
                     print("Microphone access was not granted.")
                     return
                 }
-
                 var deviceId: DeviceID?
-                #if os(macOS)
                 if self.selectedAudioInput != "No Audio Input",
                    let devices = self.audioDevices,
                    let device = devices.first(where: { $0.name == selectedAudioInput })
                 {
                     deviceId = device.id
                 }
-
+                
                 // There is no built-in microphone
                 if deviceId == nil {
                     throw WhisperError.microphoneUnavailable()
                 }
-                #endif
-
+                
                 try? audioProcessor.startRecordingLive(inputDeviceID: deviceId) { _ in
                     DispatchQueue.main.async {
                         bufferEnergy = whisperKit?.audioProcessor.relativeEnergy ?? []
                         bufferSeconds = Double(whisperKit?.audioProcessor.audioSamples.count ?? 0) / Double(WhisperKit.sampleRate)
                     }
                 }
-
+                
                 // Delay the timer start by 1 second
                 isRecording = true
                 isTranscribing = true
@@ -1147,14 +1120,14 @@ struct ContentView: View {
             }
         }
     }
-
+    
     func stopRecording(_ loop: Bool) {
         isRecording = false
         stopRealtimeTranscription()
         if let audioProcessor = whisperKit?.audioProcessor {
             audioProcessor.stopRecording()
         }
-
+        
         // If not looping, transcribe the full buffer
         if !loop {
             Task {
@@ -1166,39 +1139,39 @@ struct ContentView: View {
             }
         }
     }
-
+    
     // MARK: - Transcribe Logic
-
+    
     func transcribeCurrentFile(path: String) async throws {
         let audioFileBuffer = try AudioProcessor.loadAudio(fromPath: path)
         let audioFileSamples = AudioProcessor.convertBufferToArray(buffer: audioFileBuffer)
         let transcription = try await transcribeAudioSamples(audioFileSamples)
-
+        
         await MainActor.run {
             currentText = ""
             unconfirmedText = []
             guard let segments = transcription?.segments else {
                 return
             }
-
+            
             self.tokensPerSecond = transcription?.timings.tokensPerSecond ?? 0
             self.effectiveRealTimeFactor = transcription?.timings.realTimeFactor ?? 0
             self.currentEncodingLoops = Int(transcription?.timings.totalEncodingRuns ?? 0)
             self.firstTokenTime = transcription?.timings.firstTokenTime ?? 0
             self.pipelineStart = transcription?.timings.pipelineStart ?? 0
             self.currentLag = transcription?.timings.decodingLoop ?? 0
-
+            
             self.confirmedSegments = segments
         }
     }
-
+    
     func transcribeAudioSamples(_ samples: [Float]) async throws -> TranscriptionResult? {
         guard let whisperKit = whisperKit else { return nil }
-
+        
         let languageCode = Constants.languages[selectedLanguage, default: Constants.defaultLanguageCode]
         let task: DecodingTask = selectedTask == "transcribe" ? .transcribe : .translate
         let seekClip = [lastConfirmedSegmentEndSeconds]
-
+        
         let options = DecodingOptions(
             verbose: false,
             task: task,
@@ -1212,10 +1185,9 @@ struct ContentView: View {
             withoutTimestamps: !enableTimestamps,
             clipTimestamps: seekClip
         )
-
+        
         // Early stopping checks
         let decodingCallback: ((TranscriptionProgress) -> Bool?) = { progress in
-            print("===== progress", progress.text)
             DispatchQueue.main.async {
                 let fallbacks = Int(progress.timings.totalDecodingFallbacks)
                 if progress.text.count < currentText.count {
@@ -1251,9 +1223,9 @@ struct ContentView: View {
             callback: decodingCallback
         ) .first
     }
-
+    
     // MARK: Streaming Logic
-
+    
     func realtimeLoop() {
         transcriptionTask = Task {
             while isRecording && isTranscribing {
@@ -1266,22 +1238,22 @@ struct ContentView: View {
             }
         }
     }
-
+    
     func stopRealtimeTranscription() {
         isTranscribing = false
         transcriptionTask?.cancel()
     }
-
+    
     func transcribeCurrentBuffer() async throws {
         guard let whisperKit = whisperKit else { return }
-
+        
         // Retrieve the current audio buffer from the audio processor
         let currentBuffer = whisperKit.audioProcessor.audioSamples
-
+        
         // Calculate the size and duration of the next buffer segment
         let nextBufferSize = currentBuffer.count - lastBufferSize
         let nextBufferSeconds = Float(nextBufferSize) / Float(WhisperKit.sampleRate)
-
+        
         // Only run the transcribe if the next buffer has at least 1 second of audio
         guard nextBufferSeconds > 1 else {
             await MainActor.run {
@@ -1292,26 +1264,26 @@ struct ContentView: View {
             try await Task.sleep(nanoseconds: 100_000_000) // sleep for 100ms for next buffer
             return
         }
-
+        
         if useVAD {
             // Retrieve the current relative energy values from the audio processor
             let currentRelativeEnergy = whisperKit.audioProcessor.relativeEnergy
-
+            
             // Calculate the number of energy values to consider based on the duration of the next buffer
             // Each energy value corresponds to 1 buffer length (100ms of audio), hence we divide by 0.1
             let energyValuesToConsider = Int(nextBufferSeconds / 0.1)
-
+            
             // Extract the relevant portion of energy values from the currentRelativeEnergy array
             let nextBufferEnergies = currentRelativeEnergy.suffix(energyValuesToConsider)
-
+            
             // Determine the number of energy values to check for voice presence
             // Considering up to the last 1 second of audio, which translates to 10 energy values
             let numberOfValuesToCheck = max(10, nextBufferEnergies.count - 10)
-
+            
             // Check if any of the energy values in the considered range exceed the silence threshold
             // This indicates the presence of voice in the buffer
             let voiceDetected = nextBufferEnergies.prefix(numberOfValuesToCheck).contains { $0 > Float(silenceThreshold) }
-
+            
             // Only run the transcribe if the next buffer has voice
             guard voiceDetected else {
                 await MainActor.run {
@@ -1319,26 +1291,26 @@ struct ContentView: View {
                         currentText = "Waiting for speech..."
                     }
                 }
-
-//                if nextBufferSeconds > 30 {
-//                    // This is a completely silent segment of 30s, so we can purge the audio and confirm anything pending
-//                    lastConfirmedSegmentEndSeconds = 0
-//                    whisperKit.audioProcessor.purgeAudioSamples(keepingLast: 2 * WhisperKit.sampleRate) // keep last 2s to include VAD overlap
-//                    currentBuffer = whisperKit.audioProcessor.audioSamples
-//                    lastBufferSize = 0
-//                    confirmedSegments.append(contentsOf: unconfirmedSegments)
-//                    unconfirmedSegments = []
-//                }
-
+                
+                //                if nextBufferSeconds > 30 {
+                //                    // This is a completely silent segment of 30s, so we can purge the audio and confirm anything pending
+                //                    lastConfirmedSegmentEndSeconds = 0
+                //                    whisperKit.audioProcessor.purgeAudioSamples(keepingLast: 2 * WhisperKit.sampleRate) // keep last 2s to include VAD overlap
+                //                    currentBuffer = whisperKit.audioProcessor.audioSamples
+                //                    lastBufferSize = 0
+                //                    confirmedSegments.append(contentsOf: unconfirmedSegments)
+                //                    unconfirmedSegments = []
+                //                }
+                
                 // Sleep for 100ms and check the next buffer
                 try await Task.sleep(nanoseconds: 100_000_000)
                 return
             }
         }
-
+        
         // Store this for next iterations VAD
         lastBufferSize = currentBuffer.count
-
+        
         if enableEagerDecoding {
             // Run realtime transcribe using word timestamps for segmentation
             let transcription = try await transcribeEagerMode(Array(currentBuffer))
@@ -1348,7 +1320,7 @@ struct ContentView: View {
                 self.pipelineStart = transcription?.timings.pipelineStart ?? 0
                 self.currentLag = transcription?.timings.decodingLoop ?? 0
                 self.currentEncodingLoops = Int(transcription?.timings.totalEncodingRuns ?? 0)
-
+                
                 let totalAudio = Double(currentBuffer.count) / Double(WhisperKit.sampleRate)
                 self.totalInferenceTime = transcription?.timings.fullPipeline ?? 0
                 self.effectiveRealTimeFactor = Double(totalInferenceTime) / totalAudio
@@ -1357,8 +1329,9 @@ struct ContentView: View {
             // Run realtime transcribe using timestamp tokens directly
             let transcription = try await transcribeAudioSamples(Array(currentBuffer))
             
+            // 运行PundixAi
             if let tr = transcription {
-                print("text - allwords >>>>> ", tr.text, tr.allWords, tr.language)
+                let _ = pxAiServer.execute(tr)
             }
             
             
@@ -1369,36 +1342,36 @@ struct ContentView: View {
                 guard let segments = transcription?.segments else {
                     return
                 }
-
+                
                 self.tokensPerSecond = transcription?.timings.tokensPerSecond ?? 0
                 self.firstTokenTime = transcription?.timings.firstTokenTime ?? 0
                 self.pipelineStart = transcription?.timings.pipelineStart ?? 0
                 self.currentLag = transcription?.timings.decodingLoop ?? 0
                 self.currentEncodingLoops += Int(transcription?.timings.totalEncodingRuns ?? 0)
-
+                
                 let totalAudio = Double(currentBuffer.count) / Double(WhisperKit.sampleRate)
                 self.totalInferenceTime += transcription?.timings.fullPipeline ?? 0
                 self.effectiveRealTimeFactor = Double(totalInferenceTime) / totalAudio
-
+                
                 // Logic for moving segments to confirmedSegments
                 if segments.count > requiredSegmentsForConfirmation {
                     // Calculate the number of segments to confirm
                     let numberOfSegmentsToConfirm = segments.count - requiredSegmentsForConfirmation
-
+                    
                     // Confirm the required number of segments
                     let confirmedSegmentsArray = Array(segments.prefix(numberOfSegmentsToConfirm))
                     let remainingSegments = Array(segments.suffix(requiredSegmentsForConfirmation))
-
+                    
                     // Update lastConfirmedSegmentEnd based on the last confirmed segment
                     if let lastConfirmedSegment = confirmedSegmentsArray.last, lastConfirmedSegment.end > lastConfirmedSegmentEndSeconds {
                         lastConfirmedSegmentEndSeconds = lastConfirmedSegment.end
-
+                        
                         // Add confirmed segments to the confirmedSegments array
                         if !self.confirmedSegments.contains(confirmedSegmentsArray) {
                             self.confirmedSegments.append(contentsOf: confirmedSegmentsArray)
                         }
                     }
-
+                    
                     // Update transcriptions to reflect the remaining segments
                     self.unconfirmedSegments = remainingSegments
                 } else {
@@ -1408,18 +1381,18 @@ struct ContentView: View {
             }
         }
     }
-
+    
     func transcribeEagerMode(_ samples: [Float]) async throws -> TranscriptionResult? {
         guard let whisperKit = whisperKit else { return nil }
-
+        
         guard whisperKit.textDecoder.supportsWordTimestamps else {
             confirmedText = "Eager mode requires word timestamps, which are not supported by the current model: \(selectedModel)."
             return nil
         }
-
+        
         let languageCode = Constants.languages[selectedLanguage, default: Constants.defaultLanguageCode]
         let task: DecodingTask = selectedTask == "transcribe" ? .transcribe : .translate
-
+        
         let options = DecodingOptions(
             verbose: false,
             task: task,
@@ -1434,7 +1407,7 @@ struct ContentView: View {
             wordTimestamps: true, // required for eager mode
             firstTokenLogProbThreshold: -1.5 // higher threshold to prevent fallbacks from running to often
         )
-
+        
         // Early stopping checks
         let decodingCallback: ((TranscriptionProgress) -> Bool?) = { progress in
             DispatchQueue.main.async {
@@ -1463,12 +1436,12 @@ struct ContentView: View {
             if progress.avgLogprob! < options.logProbThreshold! {
                 return false
             }
-
+            
             return nil
         }
-
+        
         Logging.info("[EagerMode] \(lastAgreedSeconds)-\(Double(samples.count) / 16000.0) seconds")
-
+        
         let streamingAudio = samples
         var streamOptions = options
         streamOptions.clipTimestamps = [lastAgreedSeconds]
@@ -1480,19 +1453,19 @@ struct ContentView: View {
                 var skipAppend = false
                 if let result = transcription {
                     hypothesisWords = result.allWords.filter { $0.start >= lastAgreedSeconds }
-
+                    
                     if let prevResult = prevResult {
                         prevWords = prevResult.allWords.filter { $0.start >= lastAgreedSeconds }
                         let commonPrefix = findLongestCommonPrefix(prevWords, hypothesisWords)
                         Logging.info("[EagerMode] Prev \"\((prevWords.map { $0.word }).joined())\"")
                         Logging.info("[EagerMode] Next \"\((hypothesisWords.map { $0.word }).joined())\"")
                         Logging.info("[EagerMode] Found common prefix \"\((commonPrefix.map { $0.word }).joined())\"")
-
+                        
                         if commonPrefix.count >= Int(tokenConfirmationsNeeded) {
                             lastAgreedWords = commonPrefix.suffix(Int(tokenConfirmationsNeeded))
                             lastAgreedSeconds = lastAgreedWords.first!.start
                             Logging.info("[EagerMode] Found new last agreed word \"\(lastAgreedWords.first!.word)\" at \(lastAgreedSeconds) seconds")
-
+                            
                             confirmedWords.append(contentsOf: commonPrefix.prefix(commonPrefix.count - Int(tokenConfirmationsNeeded)))
                             let currentWords = confirmedWords.map { $0.word }.joined()
                             Logging.info("[EagerMode] Current:  \(lastAgreedSeconds) -> \(Double(samples.count) / 16000.0) \(currentWords)")
@@ -1503,7 +1476,7 @@ struct ContentView: View {
                     }
                     prevResult = result
                 }
-
+                
                 if !skipAppend {
                     eagerResults.append(transcription)
                 }
@@ -1511,25 +1484,23 @@ struct ContentView: View {
         } catch {
             Logging.error("[EagerMode] Error: \(error)")
         }
-
+        
         await MainActor.run {
             let finalWords = confirmedWords.map { $0.word }.joined()
             confirmedText = finalWords
-
+            
             // Accept the final hypothesis because it is the last of the available audio
             let lastHypothesis = lastAgreedWords + findLongestDifferentSuffix(prevWords, hypothesisWords)
             hypothesisText = lastHypothesis.map { $0.word }.joined()
         }
-
+        
         let mergedResult = mergeTranscriptionResults(eagerResults, confirmedWords: confirmedWords)
-
+        
         return mergedResult
     }
 }
 
 #Preview {
     ContentView()
-    #if os(macOS)
         .frame(width: 800, height: 500)
-    #endif
 }

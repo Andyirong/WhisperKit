@@ -1116,7 +1116,6 @@ struct WhisperTokenizerWrapper: WhisperTokenizer {
                 unicodeOffset += decoded.count
             }
         }
-
         return (words, wordTokens)
     }
 
@@ -1139,8 +1138,7 @@ struct WhisperTokenizerWrapper: WhisperTokenizer {
                 words[words.count - 1] += subword
                 wordTokens[words.count - 1].append(contentsOf: subwordTokens)
             }
-        }
-
+        } 
         return (words, wordTokens)
     }
 

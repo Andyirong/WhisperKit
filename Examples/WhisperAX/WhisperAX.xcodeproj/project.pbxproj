@@ -17,6 +17,9 @@
 		16EA36CF2B59E550006CA7CF /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 16EA36CE2B59E550006CA7CF /* WhisperKit */; };
 		9613BFF42BF4E538008117B5 /* OllamaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 9613BFF32BF4E538008117B5 /* OllamaKit */; };
 		9613BFF62BF505F3008117B5 /* CommandView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9613BFF52BF505F3008117B5 /* CommandView.swift */; };
+		96485D822BFD9D4C00D4D118 /* PundixAiServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96485D812BFD9D4C00D4D118 /* PundixAiServer.swift */; };
+		96485D852BFDC2B300D4D118 /* RxRelay in Frameworks */ = {isa = PBXBuildFile; productRef = 96485D842BFDC2B300D4D118 /* RxRelay */; };
+		96485D872BFDC2B300D4D118 /* RxSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 96485D862BFDC2B300D4D118 /* RxSwift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -51,6 +54,8 @@
 		1677AFE52B57704E008C61C0 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		167B345E2B05431E0076F261 /* WhisperAX.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WhisperAX.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9613BFF52BF505F3008117B5 /* CommandView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandView.swift; sourceTree = "<group>"; };
+		96485D802BFC9DA400D4D118 /* MyPlayground.playground */ = {isa = PBXFileReference; lastKnownFileType = file.playground; path = MyPlayground.playground; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.swift; };
+		96485D812BFD9D4C00D4D118 /* PundixAiServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PundixAiServer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -60,6 +65,8 @@
 			files = (
 				16EA36CF2B59E550006CA7CF /* WhisperKit in Frameworks */,
 				16D581092B4F7E4E000C0AB0 /* MarkdownUI in Frameworks */,
+				96485D872BFDC2B300D4D118 /* RxSwift in Frameworks */,
+				96485D852BFDC2B300D4D118 /* RxRelay in Frameworks */,
 				9613BFF42BF4E538008117B5 /* OllamaKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -84,6 +91,7 @@
 				1677AFE42B5769E5008C61C0 /* Views */,
 				1677AFD72B576375008C61C0 /* Resources */,
 				1677AFAD2B57618A008C61C0 /* Preview Content */,
+				96485D812BFD9D4C00D4D118 /* PundixAiServer.swift */,
 			);
 			path = WhisperAX;
 			sourceTree = "<group>";
@@ -154,6 +162,7 @@
 			children = (
 				1677AFE52B57704E008C61C0 /* ContentView.swift */,
 				9613BFF52BF505F3008117B5 /* CommandView.swift */,
+				96485D802BFC9DA400D4D118 /* MyPlayground.playground */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -208,6 +217,8 @@
 				16D581082B4F7E4E000C0AB0 /* MarkdownUI */,
 				16EA36CE2B59E550006CA7CF /* WhisperKit */,
 				9613BFF32BF4E538008117B5 /* OllamaKit */,
+				96485D842BFDC2B300D4D118 /* RxRelay */,
+				96485D862BFDC2B300D4D118 /* RxSwift */,
 			);
 			productName = BasicExample;
 			productReference = 167B345E2B05431E0076F261 /* WhisperAX.app */;
@@ -241,6 +252,7 @@
 				161135D62B3F66A6003C20F6 /* XCLocalSwiftPackageReference "../.." */,
 				16D581062B4F7DCE000C0AB0 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 				962391C82BF4983100D80EFD /* XCRemoteSwiftPackageReference "OllamaKit" */,
+				96485D832BFDC2B300D4D118 /* XCRemoteSwiftPackageReference "RxSwift" */,
 			);
 			productRefGroup = 167B345F2B05431E0076F261 /* Products */;
 			projectDirPath = "";
@@ -272,6 +284,7 @@
 			files = (
 				1677AFE62B57704E008C61C0 /* ContentView.swift in Sources */,
 				1677AFC22B57618A008C61C0 /* WhisperAXApp.swift in Sources */,
+				96485D822BFD9D4C00D4D118 /* PundixAiServer.swift in Sources */,
 				9613BFF62BF505F3008117B5 /* CommandView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -431,12 +444,11 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.functionx.whisperax1;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTED_PLATFORMS = macosx;
 				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -478,12 +490,11 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTED_PLATFORMS = macosx;
 				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -534,6 +545,14 @@
 				minimumVersion = 4.1.0;
 			};
 		};
+		96485D832BFDC2B300D4D118 /* XCRemoteSwiftPackageReference "RxSwift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ReactiveX/RxSwift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 6.7.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -550,6 +569,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 962391C82BF4983100D80EFD /* XCRemoteSwiftPackageReference "OllamaKit" */;
 			productName = OllamaKit;
+		};
+		96485D842BFDC2B300D4D118 /* RxRelay */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 96485D832BFDC2B300D4D118 /* XCRemoteSwiftPackageReference "RxSwift" */;
+			productName = RxRelay;
+		};
+		96485D862BFDC2B300D4D118 /* RxSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 96485D832BFDC2B300D4D118 /* XCRemoteSwiftPackageReference "RxSwift" */;
+			productName = RxSwift;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
