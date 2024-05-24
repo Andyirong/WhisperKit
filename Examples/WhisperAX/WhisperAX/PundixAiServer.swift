@@ -12,18 +12,16 @@ import RxRelay
 
 class PundixAiServer: NSObject {  
     func execute(_ tr:TranscriptionResult) -> Bool {
-        var results:[[String:Any]] = []
         for segment in tr.segments {
-            var items:[String:Any] = [:]
             if let textDic = extractTextToDic(languages: Array(Constants.languageCodes), input: segment.text) {
-                items["start"] = formatTimestamp(segment.start)
-                items["end"] = formatTimestamp(segment.end)
-                items["text"] = textDic
-                results.append(items)
-                print("[\(formatTimestamp(segment.start)) - \(formatTimestamp(segment.end))]>>>>>", items)
+                let textItems = textDic.sorted(by: { $0.0 < $1.0 }).map { key, value in
+                    return "\"\(key)\":\(value)"
+                }
+                print("[\(formatTimestamp(segment.start)) - \(formatTimestamp(segment.end))]>>>>>", textItems)
+                return true
             }
         }
-        return results.count > 0
+        return false
     }
 }
 

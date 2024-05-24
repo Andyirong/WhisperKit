@@ -162,15 +162,7 @@ struct ContentView: View {
         } detail: {
             
             VStack {
-                HStack {
-                    VStack(alignment: .leading) {
-                        transcriptionView
-                    }.padding()
-                    Divider()
-                    CommandView()
-                        .foregroundColor(.gray)
-                        .frame(width:400)
-                }
+                transcriptionView
                 controlsView
             }
             .toolbar(content: {
