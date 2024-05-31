@@ -270,6 +270,7 @@ final class TranscribeTask {
 
                 var currentDecodingOptions = options
                 // For a multilingual model, if language is not passed and detectLanguage is true, detect language and set in options
+                Logging.debug(">> isModelMultilingual", textDecoder.isModelMultilingual, options.language, options.detectLanguage)
                 if textDecoder.isModelMultilingual, options.language == nil, options.detectLanguage {
                     let languageDecodingResult: DecodingResult? = try? await textDecoder.detectLanguage(
                         from: encoderOutput,
@@ -282,7 +283,8 @@ final class TranscribeTask {
                     // Update the language decoding options
                     currentDecodingOptions.language = languageDecodingResult?.language
                     detectedLanguage = languageDecodingResult?.language
-
+                    Logging.debug("Detect Language: ", languageDecodingResult?.language ?? "")
+                    
                     // Update prompt and KV Cache if needed
                     if options.usePrefillPrompt {
                         decoderInputs = try await textDecoder.prefillDecoderInputs(decoderInputs, withOptions: currentDecodingOptions)

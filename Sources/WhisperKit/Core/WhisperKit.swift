@@ -118,13 +118,15 @@ open class WhisperKit {
     public static func fetchAvailableModels(from repo: String = "argmaxinc/whisperkit-coreml", matching: [String] = ["openai_*", "distil-whisper_*"]) async throws -> [String] {
         let hubApi = HubApi()
         let modelFiles = try await hubApi.getFilenames(from: repo, matching: matching)
-
+        
         return formatModelFiles(modelFiles)
     }
 
     public static func formatModelFiles(_ modelFiles: [String]) -> [String] {
         let modelFilters = ModelVariant.allCases.map { "\($0.description)\($0.description.contains("large") ? "" : "/")" } // Include quantized models for large
         let modelVariants = modelFiles.map { $0.components(separatedBy: "/")[0] + "/" }
+        
+        Logging.debug(">>>>", modelVariants)
         let filteredVariants = Set(modelVariants.filter { item in
             let count = modelFilters.reduce(0) { count, filter in
                 let isContained = item.contains(filter) ? 1 : 0

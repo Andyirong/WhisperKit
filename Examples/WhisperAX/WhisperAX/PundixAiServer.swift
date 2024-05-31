@@ -9,19 +9,68 @@ import Foundation
 import WhisperKit
 import RxSwift
 import RxRelay
+import Alamofire
 
-class PundixAiServer: NSObject {  
-    func execute(_ tr:TranscriptionResult) -> Bool {
+
+struct TextModel {
+    let text:String
+    let model:String
+    let language:String
+    let start:String
+    let end:String
+}
+
+class PundixAiServer: NSObject {
+    private func dataToDicionary(jsonData:Data) ->Dictionary<String, AnyObject>? {
+        if let result = try? JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: AnyObject] {
+            return result
+        }
+        return nil
+    }
+    
+    func post(url:String, items:[TextModel]) ->Observable<Dictionary<String,Any>> {
+        return Observable.create { [weak self] (observer) -> Disposable in
+            var texts:[Dictionary<String,String>] = []
+            items.forEach { it in
+                let pms = ["text": it.text, "model": it.model, "language":it.language, "start":it.start, "end":it.end]
+                texts.append(pms)
+            }
+            let parameters = ["items":texts]
+            let connect = AF.request(url, method: .post, parameters: parameters, encoder: JSONParameterEncoder.default)
+                .responseData(completionHandler: { response in
+                    switch response.result {
+                    case .success(let value):
+                        if let data = self?.dataToDicionary(jsonData: value) {
+                            observer.onNext(data)
+                            observer.onCompleted()
+                        }else {
+                            observer.onError(NSError(domain: "返回参数JSON序列化错误", code: 0))
+                        }
+                    case.failure(let error):
+                        observer.onError(error)
+                    }
+                })
+            return Disposables.create {connect.cancel() }
+        }
+    }
+
+    func execute(_ url:String, _ tr:TranscriptionResult) ->Observable<Dictionary<String,Any>> {
+        var items:[TextModel] = []
         for segment in tr.segments {
-            if let textDic = extractTextToDic(languages: Array(Constants.languageCodes), input: segment.text) {
-                let textItems = textDic.sorted(by: { $0.0 < $1.0 }).map { key, value in
-                    return "\"\(key)\":\(value)"
-                }
-                print("[\(formatTimestamp(segment.start)) - \(formatTimestamp(segment.end))]>>>>>", textItems)
-                return true
+            if let tModel = extractTextToDic(languages: Array(Constants.languageCodes), input: segment.text) {
+                let item = TextModel(text: tModel.text, model: tModel.model,
+                                     language: tModel.language, 
+                                     start: formatTimestamp(segment.start),
+                                     end: formatTimestamp(segment.end))
+                
+                items.append(item)
             }
         }
-        return false
+        if items.count > 0 {
+            return post(url: url, items: items)
+        }
+        
+        return .error(NSError(domain: "音频输入为空", code: 0))
     }
 }
 
@@ -32,7 +81,7 @@ extension PundixAiServer {
     }
 
     func extractTagContent(input:String) -> [String] {
-        let pattern = "<\\|(\\w+)\\|>"
+        let pattern = "<\\|(.+?)\\|>"
         guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
             return []
         }
@@ -49,8 +98,14 @@ extension PundixAiServer {
         return result
     }
 
+    func isNospeech(tags:[String]) ->Bool {
+        return tags.contains { it in
+            return it == "nospeech"
+        }
+    }
+    
     func extractLangage(languages:[String], tags:[String]) ->String? {
-        if tags.count >= 3 {
+        if tags.count >= 2 && tags.first == "startoftranscript" {
             let langage = tags[1]
             return languages.contains(where: { $0 == langage }) ? langage : nil
         }
@@ -63,26 +118,26 @@ extension PundixAiServer {
         return nil
     }
 
-    func extractTextToDic(languages:[String], input:String) ->Dictionary<String,String>? {
+    func extractTextToDic(languages:[String], input:String) ->TextModel? {
         var text = input
         let tags = extractTagContent(input: input)
-        var result:[String:String] = [:]
-        if tags.first == "startoftranscript" && tags.last == "endoftext" {
-            if let langage = extractLangage(languages: languages, tags: tags) {
-                result["langage"] = langage
+        if !isNospeech(tags: tags) {
+            var _language:String? = "en"
+            if let language = extractLangage(languages: languages, tags: tags) {
+                _language = language
             }
             
+            var _model:String? = "transcribe"
             if let model = extractModel(tags: tags) {
-                result["model"] = model
+                _model = model
             }
             
             for item in tags {
                 text = text.replacingOccurrences(of: "<|\(item)|>", with: "")
             }
             text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty {
-                result["text"] = text
-                return result
+            if !text.isEmpty , let _md = _model , let _lan = _language {
+                return TextModel(text: text, model: _md, language: _lan, start: "", end: "")
             }
         }
         return nil

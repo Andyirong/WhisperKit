@@ -11,6 +11,7 @@ import AppKit
 #endif
 import AVFoundation
 import Combine
+import RxSwift
 
 
 struct ContentView: View {
@@ -21,7 +22,7 @@ struct ContentView: View {
     @State var currentText: String = ""
     // TODO: Make this configurable in the UI
     @State var modelStorage: String = "huggingface/models/argmaxinc/whisperkit-coreml"
-    
+     
     // MARK: Model management
     @State private var modelState: ModelState = .unloaded
     @State private var localModels: [String] = []
@@ -36,11 +37,11 @@ struct ContentView: View {
     @AppStorage("selectedTask") private var selectedTask: String = "transcribe"
     @AppStorage("selectedLanguage") private var selectedLanguage: String = "english"
     @AppStorage("repoName") private var repoName: String = "argmaxinc/whisperkit-coreml"
-    @AppStorage("enableTimestamps") private var enableTimestamps: Bool = true
-    @AppStorage("enablePromptPrefill") private var enablePromptPrefill: Bool = true
-    @AppStorage("enableCachePrefill") private var enableCachePrefill: Bool = true
-    @AppStorage("enableSpecialCharacters") private var enableSpecialCharacters: Bool = false
-    @AppStorage("enableEagerDecoding") private var enableEagerDecoding: Bool = true
+    @AppStorage("enableTimestamps") private var enableTimestamps: Bool = false
+    @AppStorage("enablePromptPrefill") private var enablePromptPrefill: Bool = false
+    @AppStorage("enableCachePrefill") private var enableCachePrefill: Bool = false
+    @AppStorage("enableSpecialCharacters") private var enableSpecialCharacters: Bool = true
+    @AppStorage("enableEagerDecoding") private var enableEagerDecoding: Bool = false
     @AppStorage("enableDecoderPreview") private var enableDecoderPreview: Bool = true
     @AppStorage("temperatureStart") private var temperatureStart: Double = 0
     @AppStorage("fallbackCount") private var fallbackCount: Double = 5
@@ -50,6 +51,7 @@ struct ContentView: View {
     @AppStorage("useVAD") private var useVAD: Bool = true
     @AppStorage("tokenConfirmationsNeeded") private var tokenConfirmationsNeeded: Double = 5
     
+    @AppStorage("ServerApiURL") private var ServerApiURL: String = "https://127.0.0.1:8080/text2commed"
     // MARK: Standard properties
     
     @State private var loadingProgressValue: Float = 0.0
@@ -84,7 +86,7 @@ struct ContentView: View {
     @State private var confirmedText: String = ""
     @State private var hypothesisWords: [WordTiming] = []
     @State private var hypothesisText: String = ""
-    
+    @State private var requestResultText: String = ""
     // MARK: UI properties
     
     @State private var showAdvancedOptions: Bool = false
@@ -213,14 +215,12 @@ struct ContentView: View {
                         Text("\(timestampText) \(Text(confirmedText).fontWeight(.bold))\(Text(hypothesisText).fontWeight(.bold).foregroundColor(.gray))")
                             .font(.headline)
                             .multilineTextAlignment(.leading)
-                            .background(Color.red)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         
                         if enableDecoderPreview {
                             Text("\(currentText)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                                .background(Color.blue)
                                 .multilineTextAlignment(.leading)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.top)
@@ -232,7 +232,6 @@ struct ContentView: View {
                                 .font(.headline)
                                 .fontWeight(.bold)
                                 .tint(.green)
-                                .background(Color.green)
                                 .multilineTextAlignment(.leading)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -242,7 +241,6 @@ struct ContentView: View {
                                 .font(.headline)
                                 .fontWeight(.bold)
                                 .foregroundColor(.gray)
-                                .background(Color.yellow)
                                 .multilineTextAlignment(.leading)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -251,13 +249,11 @@ struct ContentView: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.leading)
-                                .background(Color.red)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             Text("\(currentText)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.leading)
-                                .background(Color.blue)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
@@ -281,7 +277,6 @@ struct ContentView: View {
     }
     
     // MARK: - Models
-    
     var modelSelectorView: some View {
         Group {
             VStack {
@@ -606,6 +601,11 @@ struct ContentView: View {
     
     var basicSettingsView: some View {
         VStack {
+            Text(requestResultText)
+                .font(.caption)
+                .foregroundColor(.gray)
+                .padding()
+            
             HStack {
                 Picker("", selection: $selectedTask) {
                     ForEach(DecodingTask.allCases, id: \.self) { task in
@@ -661,10 +661,20 @@ struct ContentView: View {
     var settingsForm: some View {
         List {
             HStack {
+                Text("提交地址：")
+                TextField("输入数据接收地址", text: $ServerApiURL)
+                        .textFieldStyle(.plain)
+                        .multilineTextAlignment(.leading)
+            }
+            .frame(height: 50)
+            .padding(.horizontal)
+            
+            HStack {
                 Text("Show Timestamps")
                 InfoButton("Toggling this will include/exclude timestamps in both the UI and the prefill tokens.\nEither <|notimestamps|> or <|0.00|> will be forced based on this setting unless \"Prompt Prefill\" is de-selected.")
                 Spacer()
                 Toggle("", isOn: $enableTimestamps)
+//                Text("TRUE")
             }
             .padding(.horizontal)
             
@@ -673,6 +683,7 @@ struct ContentView: View {
                 InfoButton("Toggling this will include/exclude special characters in the transcription text.")
                 Spacer()
                 Toggle("", isOn: $enableSpecialCharacters)
+//                Text("TRUE")
             }
             .padding(.horizontal)
             
@@ -681,6 +692,7 @@ struct ContentView: View {
                 InfoButton("Toggling this will show a small preview of the decoder output in the UI under the transcribe. This can be useful for debugging.")
                 Spacer()
                 Toggle("", isOn: $enableDecoderPreview)
+//                Text("FALSE")
             }
             .padding(.horizontal)
             
@@ -689,6 +701,7 @@ struct ContentView: View {
                 InfoButton("When Prompt Prefill is on, it will force the task, language, and timestamp tokens in the decoding loop. \nToggle it off if you'd like the model to generate those tokens itself instead.")
                 Spacer()
                 Toggle("", isOn: $enablePromptPrefill)
+//                Text("FALSE")
             }
             .padding(.horizontal)
             
@@ -697,6 +710,7 @@ struct ContentView: View {
                 InfoButton("When Cache Prefill is on, the decoder will try to use a lookup table of pre-computed KV caches instead of computing them during the decoding loop. \nThis allows the model to skip the compute required to force the initial prefill tokens, and can speed up inference")
                 Spacer()
                 Toggle("", isOn: $enableCachePrefill)
+//                Text("FALSE")
             }
             .padding(.horizontal)
             
@@ -1167,12 +1181,13 @@ struct ContentView: View {
         let options = DecodingOptions(
             verbose: false,
             task: task,
-            language: languageCode,
+//            language: languageCode,
             temperature: Float(temperatureStart),
             temperatureFallbackCount: Int(fallbackCount),
             sampleLength: Int(sampleLength),
             usePrefillPrompt: enablePromptPrefill,
             usePrefillCache: enableCachePrefill,
+            detectLanguage: true,
             skipSpecialTokens: !enableSpecialCharacters,
             withoutTimestamps: !enableTimestamps,
             clipTimestamps: seekClip
@@ -1306,6 +1321,17 @@ struct ContentView: View {
         if enableEagerDecoding {
             // Run realtime transcribe using word timestamps for segmentation
             let transcription = try await transcribeEagerMode(Array(currentBuffer))
+            
+            // 运行PundixAi
+            if let tr = transcription {
+                let _ = pxAiServer.execute(ServerApiURL, tr)
+                    .subscribe(onNext: { result in
+                        self.requestResultText = "\(result)"
+                    }, onError: { er in
+                        self.requestResultText = "\(er)"
+                    })
+            }
+            
             await MainActor.run {
                 self.tokensPerSecond = transcription?.timings.tokensPerSecond ?? 0
                 self.firstTokenTime = transcription?.timings.firstTokenTime ?? 0
@@ -1323,9 +1349,13 @@ struct ContentView: View {
             
             // 运行PundixAi
             if let tr = transcription {
-                let _ = pxAiServer.execute(tr)
+                let _ = pxAiServer.execute(ServerApiURL, tr)
+                    .subscribe(onNext: { result in
+                        self.requestResultText = "\(result)"
+                    }, onError: { er in
+                        self.requestResultText = "\(er)"
+                    })
             }
-            
             
             // We need to run this next part on the main thread
             await MainActor.run {
